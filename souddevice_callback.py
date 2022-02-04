@@ -4,19 +4,24 @@ from scipy.io.wavfile import write
 
 
 duration = 30  # seconds
-fs = 8000
+fs = 16000
 mixs_ = []
 
 
 def callback(indata, outdata, frames, time, status):
     if status:
         print(status)#,type(indata),indata.shape,frames)
-    #outdata[:] = indata
+    outdata[:] = indata
+    
     mixs_.append(np.copy(indata[:, 0]))
 
-with sd.Stream(channels=1, callback=callback,samplerate=fs):
+
+with sd.Stream(channels=1, callback=callback,dtype='int16',samplerate=fs):
     sd.sleep(int(duration * 1000))
 
 
 mixs = np.hstack(mixs_)
-write('resources/wav/realtime/test_padre_2.wav', fs, mixs)  # Save as WAV file 
+
+print(mixs.shape)
+
+write('resources/wav/realtime/16kHz/yisel_jose_30_16.wav', fs, mixs)#.astype(np.int16))  # Save as WAV file 

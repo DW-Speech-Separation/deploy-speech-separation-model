@@ -82,12 +82,12 @@ def play_audio(waveform, sample_rate):
 
 
 file_name  ="test_pacho"
-SAMPLE_WAV_SPEECH_PATH ="resources/wav/realtime/"+file_name+".wav"
+SAMPLE_WAV_SPEECH_PATH ="resources/wav/realtime/16kHz/"+file_name+".wav"
 
-files_wave = ["Lab41-SRI-VOiCES-src-sp0307-ch127535-sg0042"]#"test_pacho","test_padre_1_noise","test_carlos","test_madre_2_reduce_noise"]
+files_wave = ["pedro_jose_30_16"]
 
 for f in files_wave:
-    SAMPLE_WAV_SPEECH_PATH ="resources/wav/realtime/"+f+".wav"
+    SAMPLE_WAV_SPEECH_PATH ="resources/wav/realtime/16kHz/"+f+".wav"
     waveform, sample_rate = get_speech_sample(SAMPLE_WAV_SPEECH_PATH,8000)
     print("Original")
     name = "Original "+f
@@ -97,19 +97,17 @@ for f in files_wave:
     plot_specgram(waveform, sample_rate, name)
     
     print("Codec")
-    
-    
+
     configs = [
     ({"format": "gsm"}, "GSM-FR")]
     
-    #for param, title in configs:
-    #    augmented = F.apply_codec(waveform, sample_rate, **param)
+    for param, title in configs:
+        augmented = F.apply_codec(waveform, sample_rate, **param)
 
     augmented = waveform
 
-    #name = "GSM-FR "+f
+    name = "GSM-FR "+f
 
-    name = "RESAMPLE_"+f
     print(augmented.shape)
     mix_spec = plot_spectrogram(augmented.numpy()[0,:],name)
     mix_spec.figure.savefig("/home/josearangos/Documentos/UdeA/TG-Separación-Fuentes/Simulacion_canal_telefonico/"+name+".png",bbox_inches='tight', pad_inches=0)
