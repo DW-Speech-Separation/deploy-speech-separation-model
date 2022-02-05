@@ -8,11 +8,11 @@ fs = 16000
 mixs_ = []
 
 
+#,type(indata),indata.shape,frames)
 def callback(indata, outdata, frames, time, status):
     if status:
-        print(status)#,type(indata),indata.shape,frames)
-    outdata[:] = indata
-    
+        print(status)
+    outdata[:] = indata    
     mixs_.append(np.copy(indata[:, 0]))
 
 

@@ -110,16 +110,12 @@ with sd.InputStream(channels=1, callback=callback,samplerate=fs,dtype='float32',
     recording = False
     print("SIZE COLA", q.qsize(),i)
 """
-
-
 mixs = np.hstack(mixs_)
 s1_sources = np.hstack([s.cpu() for s in s1_sources])
 s2_sources = np.hstack([s.cpu() for s in s2_sources])
-
 
 name = name +"_"+str(duration)+"S"
 
 write('resources/wav/realtime/'+name+'.wav', fs, mixs)  # Save as WAV file 
 write('resources/separations/realtime/'+name+'_s1.wav',fs,s1_sources)
 write('resources/separations/realtime/'+name+'_s2.wav',fs, s2_sources)
-

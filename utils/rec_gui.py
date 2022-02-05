@@ -1,8 +1,3 @@
-import sounddevice as sd
-from scipy.io.wavfile import write
-import numpy as np
-import torch
-from asteroid import ConvTasNet
 import contextlib
 import queue
 import sys
@@ -11,48 +6,28 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 from tkinter.simpledialog import Dialog
+
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
 
 
-
-
-
-
-
-
-def separation(*, q, best_model, **soundfile_args):
+def file_writing_thread(*, q, **soundfile_args):
     """Write data from queue to file until *None* is received."""
     # NB: If you want fine-grained control about the buffering of the file, you
     #     can use Python's open() function (with the "buffering" argument) and
     #     pass the resulting file object to sf.SoundFile().
-    #with sf.SoundFile(**soundfile_args) as f:
-    s1_samples =  np.zeros((1,)).astype('float32')
-    s2_samples =  np.zeros((1,)).astype('float32')
     with sf.SoundFile(**soundfile_args) as f:
         while True:
             data = q.get()
             if data is None:
                 break
-
             f.write(data)
-
-            # Separation
-            data = data.reshape(1,data.shape[0])
-            out_wavs_after = best_model.separate(data)
-            s1 = out_wavs_after[0,0,:]
-            s2 = out_wavs_after[0,1,:]
-            
-            s1_samples = np.concatenate((s1_samples,s1))
-            s2_samples = np.concatenate((s2_samples,s2))
-
-    sf.write('s1.wav', s1_samples[1:], 8000)
-    sf.write('s2.wav', s2_samples[1:], 8000)
 
 
 class SettingsWindow(Dialog):
     """Dialog window for choosing sound device."""
+
     def body(self, master):
         ttk.Label(master, text='Select host API:').pack(anchor='w')
         hostapi_list = ttk.Combobox(master, state='readonly', width=50)
@@ -93,14 +68,13 @@ class SettingsWindow(Dialog):
 class RecGui(tk.Tk):
 
     stream = None
-    
+
     def __init__(self):
         super().__init__()
 
-        self.title('Realtime Speech Separation - UdeA - In2Lab')
+        self.title('Recording GUI')
 
         padding = 10
-
 
         f = ttk.Frame()
 
@@ -108,7 +82,7 @@ class RecGui(tk.Tk):
         self.rec_button.pack(side='left', padx=padding, pady=padding)
 
         self.settings_button = ttk.Button(
-            f, text='Configuración', command=self.on_settings)
+            f, text='settings', command=self.on_settings)
         self.settings_button.pack(side='left', padx=padding, pady=padding)
 
         f.pack(expand=True, padx=padding, pady=padding)
@@ -135,32 +109,15 @@ class RecGui(tk.Tk):
         self.peak = 0
         self.metering_q = queue.Queue(maxsize=1)
 
-        self.data_frame = np.zeros((1,1)).astype('float32')
-        self.N_SAMPLES = 16000
-
         self.protocol('WM_DELETE_WINDOW', self.close_window)
         self.init_buttons()
         self.update_gui()
-
-        # 1. Load model
-        self.best_model = self.load_model()
-
-    def load_model(self):
-        print("1.....Cargando modelo.....")
-        path_best_model = "checkpoint/best_model_CF_100.pth"
-        best_model  = ConvTasNet.from_pretrained(path_best_model)
-        best_model.cuda()
-
-        model_device = next(best_model.parameters()).device
-        print("Modelo cargado ...  en ",model_device)
-        return best_model
-
 
     def create_stream(self, device=None):
         if self.stream is not None:
             self.stream.close()
         self.stream = sd.InputStream(
-            device=device, channels=1, samplerate=8000,dtype='float32',callback=self.audio_callback)
+            device=device, channels=1, samplerate=8000, callback=self.audio_callback)
         self.stream.start()
 
     def audio_callback(self, indata, frames, time, status):
@@ -173,17 +130,8 @@ class RecGui(tk.Tk):
         #     This is safe because here we are only accessing it once (with a
         #     single bytecode instruction).
         if self.recording:
-
-            self.previously_recording = True        
-            self.data_frame = np.concatenate((self.data_frame,indata.copy()))
-
-            if(self.data_frame.shape[0] >= self.N_SAMPLES):
-                #Enviar a colar de separación                 
-                 self.audio_q.put(self.data_frame[1:,:])
-                # Reinicio frame
-                 self.data_frame = np.zeros((1,1)).astype('float32')
-
-
+            self.audio_q.put(indata.copy())
+            self.previously_recording = True
         else:
             if self.previously_recording:
                 self.audio_q.put(None)
@@ -207,14 +155,13 @@ class RecGui(tk.Tk):
         if self.audio_q.qsize() != 0:
             print('WARNING: Queue not empty!')
         self.thread = threading.Thread(
-            target=separation,
+            target=file_writing_thread,
             kwargs=dict(
                 file=filename,
                 mode='x',
                 samplerate=int(self.stream.samplerate),
                 channels=self.stream.channels,
                 q=self.audio_q,
-                best_model = self.best_model
             ),
         )
         self.thread.start()
@@ -243,11 +190,11 @@ class RecGui(tk.Tk):
         self.init_buttons()
 
     def on_settings(self, *args):
-        w = SettingsWindow(self, 'Configuraciones')
+        w = SettingsWindow(self, 'Settings')
         self.create_stream(device=w.result)
 
     def init_buttons(self):
-        self.rec_button['text'] = 'Grabar'
+        self.rec_button['text'] = 'record'
         self.rec_button['command'] = self.on_rec
         if self.stream:
             self.rec_button['state'] = 'normal'
@@ -269,10 +216,9 @@ class RecGui(tk.Tk):
             self.on_stop()
         self.destroy()
 
+
 def main():
     app = RecGui()
-
-    app.geometry("500x400")
     app.mainloop()
 
 

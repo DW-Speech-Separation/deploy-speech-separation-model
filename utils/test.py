@@ -6,8 +6,8 @@ import timeit
 # 1 Global variable
 
 
-file_name = "yisel_jose_30_2_8"
-PATH_TEST ="resources/wav/realtime/16kHz/"+file_name+".wav"
+file_name = "yisel_jose_1_8"
+PATH_TEST ="resources/wav/realtime/"+file_name+".wav"
 pre =""
 
 #PATH_TEST = "resources/wav/realtime/test.wav"
