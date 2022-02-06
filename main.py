@@ -44,9 +44,14 @@ def separation(*, q, best_model, **soundfile_args):
             s1 = out_wavs_after[0,0,:]
             s2 = out_wavs_after[0,1,:]
             
+            sd.play(np.column_stack([s1,s2]),samplerate=8000)
+
+
             s1_samples = np.concatenate((s1_samples,s1))
             s2_samples = np.concatenate((s2_samples,s2))
 
+            
+            
     sf.write('s1.wav', s1_samples[1:], 8000)
     sf.write('s2.wav', s2_samples[1:], 8000)
 
@@ -136,7 +141,7 @@ class RecGui(tk.Tk):
         self.metering_q = queue.Queue(maxsize=1)
 
         self.data_frame = np.zeros((1,1)).astype('float32')
-        self.N_SAMPLES = 16000
+        self.N_SAMPLES = 8000
 
         self.protocol('WM_DELETE_WINDOW', self.close_window)
         self.init_buttons()
@@ -161,6 +166,8 @@ class RecGui(tk.Tk):
             self.stream.close()
         self.stream = sd.InputStream(
             device=device, channels=1, samplerate=8000,dtype='float32',callback=self.audio_callback)
+
+        
         self.stream.start()
 
     def audio_callback(self, indata, frames, time, status):
@@ -182,8 +189,6 @@ class RecGui(tk.Tk):
                  self.audio_q.put(self.data_frame[1:,:])
                 # Reinicio frame
                  self.data_frame = np.zeros((1,1)).astype('float32')
-
-
         else:
             if self.previously_recording:
                 self.audio_q.put(None)
