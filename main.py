@@ -14,22 +14,68 @@ from tkinter.simpledialog import Dialog
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
+import torchaudio.transforms as T
+from torchaudio.models.wav2vec2.utils import import_huggingface_model
+from transformers import Wav2Vec2ForCTC, Wav2Vec2Tokenizer
+import torch.nn.functional as F
+
+def calculate_similarity(speech_embedding,waveform_1,waveform_2,num_layers=3):
+
+        features_1, _ = speech_embedding.extract_features(torch.from_numpy(waveform_1),num_layers)
+        features_2, _ = speech_embedding.extract_features(torch.from_numpy(waveform_2),num_layers)        
 
 
+        print("FEA", features_1[0].shape, features_2[0].shape) 
+        # features_1/2 => torch.Size([3, 749, 768])  [bach_size, frames, embedding_size]
+        # distance => torch.Size([3, 749]) [bach_size, frames]
+        distance =  F.cosine_similarity(features_1[0], features_2[0], dim=1) 
+        
+        #print("Distance", distance.shape)
+        # Luego hacemos el mean por muestra y luego el mean de todas las muestras.
+        distance = torch.mean(distance)
 
+        #print(distance.detach().numpy())
+        return distance.detach().numpy()
 
+def similarity_definition(speech_embedding,s1,s2,s1_samples,s2_samples): 
+    
+    #print(s1.shape,s2.shape,s1_samples.shape,s2_samples.shape)
 
+    s1_s1_samples = calculate_similarity(speech_embedding,s1,s1_samples)
+    s1_s2_samples = calculate_similarity(speech_embedding,s1,s2_samples)
+    s2_s1_samples = calculate_similarity(speech_embedding,s2,s1_samples)
+    s2_s2_samples = calculate_similarity(speech_embedding,s2,s2_samples)
 
+    if(s1_s1_samples >= s1_s2_samples):
+        s1_samples = np.column_stack([s1_samples,s1])
+        s2_samples = np.column_stack([s2_samples,s2])
+        return s1_samples,s2_samples
+    else:
+        s2_samples = np.column_stack([s2_samples,s1])
+        s1_samples = np.column_stack([s1_samples,s2])
+        return s1_samples,s2_samples
+    
+    if(s2_s1_samples >= s2_s2_samples):
+        s1_samples = np.column_stack([s1_samples,s2])
+        s2_samples = np.column_stack([s2_samples,s1])
+        return s1_samples,s2_samples
+    else:
+        s1_samples = np.column_stack([s1_samples,s1])
+        s2_samples = np.column_stack([s2_samples,s2])
+        return s1_samples,s2_samples
 
+    return s1_samples,s2_samples
 
-def separation(*, q, best_model, **soundfile_args):
+def separation(*, q, speech_embedding, best_model, **soundfile_args):
     """Write data from queue to file until *None* is received."""
     # NB: If you want fine-grained control about the buffering of the file, you
     #     can use Python's open() function (with the "buffering" argument) and
     #     pass the resulting file object to sf.SoundFile().
     #with sf.SoundFile(**soundfile_args) as f:
-    s1_samples =  np.zeros((1,)).astype('float32')
-    s2_samples =  np.zeros((1,)).astype('float32')
+    s1_samples =  np.zeros((1,1)).astype('float32')
+    s2_samples =  np.zeros((1,1)).astype('float32')
+
+    first_frame = True
     with sf.SoundFile(**soundfile_args) as f:
         while True:
             data = q.get()
@@ -41,14 +87,48 @@ def separation(*, q, best_model, **soundfile_args):
             # Separation
             data = data.reshape(1,data.shape[0])
             out_wavs_after = best_model.separate(data)
+            
+            
             s1 = out_wavs_after[0,0,:]
             s2 = out_wavs_after[0,1,:]
             
-            sd.play(np.column_stack([s1,s2]),samplerate=8000)
+            shape_s = s1.shape[0]
 
+            s1 = s1.reshape(shape_s,1)
+            s2 = s2.reshape(shape_s,1)
 
-            s1_samples = np.concatenate((s1_samples,s1))
-            s2_samples = np.concatenate((s2_samples,s2))
+            #Determinar si es ruido o no
+
+            #Asignar segmento de audio alguno de los dos vectores s1_samples o s2_samples
+
+            if(first_frame): # Significa que es el primer frame
+
+                print(s1_samples.shape,s1.shape)
+
+                s1_samples = np.row_stack([s1_samples,s1])
+                s2_samples = np.row_stack([s2_samples,s2])
+
+                print("Before",s1_samples.shape,s1.shape)
+                first_frame = False
+
+                s1_samples = s1_samples.reshape(1,s1_samples.shape[0])
+                s2_samples = s2_samples.reshape(1,s2_samples.shape[0])
+
+            else:
+
+                s1_samples, s2_samples= similarity_definition(speech_embedding,s1.reshape(1,s1.shape[0]),
+                s2.reshape(1,s2.shape[0]),
+                s1_samples,#.reshape(1,s1_samples.shape[0]),
+                s2_samples)#.reshape(1,s2_samples.shape[0]))
+
+            len_s = s1_samples.shape[1]
+            #Definir orden reproducción
+
+            print("SIZE",s1_samples.shape, s2_samples.shape)
+            
+            sd.play(np.column_stack([s1_samples[0,len_s-shape_s:],s2_samples[0,len_s-shape_s:]]),samplerate=8000)
+            #s1_samples = np.concatenate((s1_samples,s1))
+            #s2_samples = np.concatenate((s2_samples,s2))
 
             
             
@@ -149,6 +229,13 @@ class RecGui(tk.Tk):
 
         # 1. Load model
         self.best_model = self.load_model()
+        self.speech_embedding = self.speech_embedding_initialize()
+
+    def speech_embedding_initialize(self):
+        print("Downloading Speech Embedding.....") #force_download=True
+        original = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base-960h").cuda()
+        speech_embedding = import_huggingface_model(original)
+        return speech_embedding
 
     def load_model(self):
         print("1.....Cargando modelo.....")
@@ -159,7 +246,6 @@ class RecGui(tk.Tk):
         model_device = next(best_model.parameters()).device
         print("Modelo cargado ...  en ",model_device)
         return best_model
-
 
     def create_stream(self, device=None):
         if self.stream is not None:
@@ -219,7 +305,8 @@ class RecGui(tk.Tk):
                 samplerate=int(self.stream.samplerate),
                 channels=self.stream.channels,
                 q=self.audio_q,
-                best_model = self.best_model
+                best_model = self.best_model,
+                speech_embedding = self.speech_embedding
             ),
         )
         self.thread.start()
