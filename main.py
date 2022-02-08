@@ -17,11 +17,6 @@ import soundfile as sf
 
 
 
-
-
-
-
-
 def separation(*, q, best_model, **soundfile_args):
     """Write data from queue to file until *None* is received."""
     # NB: If you want fine-grained control about the buffering of the file, you
