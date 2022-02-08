@@ -19,13 +19,34 @@ from torchaudio.models.wav2vec2.utils import import_huggingface_model
 from transformers import Wav2Vec2ForCTC, Wav2Vec2Tokenizer
 import torch.nn.functional as F
 
+
+N_SAMPLES = 8000
+
+def get_max_energy(audio, segment_size=8000):
+   energies_audio = []
+   blocks = []
+   for i in range(0, len(audio), segment_size):
+       block = audio[i:i+segment_size]
+       energies_audio.append(np.sum(np.abs(block**2)))
+       blocks.append(block)
+   
+   energies_audio = np.array(energies_audio)
+   index_max_energy = np.argmax(energies_audio)
+   max_energy_block = blocks[index_max_energy]
+   max_energy = energies_audio[index_max_energy]
+   return max_energy,max_energy_block
+
+def energy(audio):
+    return np.sum(np.abs(audio**2))
+
+
 def calculate_similarity(speech_embedding,waveform_1,waveform_2,num_layers=3):
 
         features_1, _ = speech_embedding.extract_features(torch.from_numpy(waveform_1),num_layers)
         features_2, _ = speech_embedding.extract_features(torch.from_numpy(waveform_2),num_layers)        
 
 
-        print("FEA", features_1[0].shape, features_2[0].shape) 
+        #print("FEA", features_1[0].shape, features_2[0].shape) 
         # features_1/2 => torch.Size([3, 749, 768])  [bach_size, frames, embedding_size]
         # distance => torch.Size([3, 749]) [bach_size, frames]
         distance =  F.cosine_similarity(features_1[0], features_2[0], dim=1) 
@@ -37,14 +58,14 @@ def calculate_similarity(speech_embedding,waveform_1,waveform_2,num_layers=3):
         #print(distance.detach().numpy())
         return distance.detach().numpy()
 
-def similarity_definition(speech_embedding,s1,s2,s1_samples,s2_samples): 
+def similarity_definition(speech_embedding,s1,s2,max_energy_block_1,max_energy_block_2,s1_samples,s2_samples): 
     
     #print(s1.shape,s2.shape,s1_samples.shape,s2_samples.shape)
 
-    s1_s1_samples = calculate_similarity(speech_embedding,s1,s1_samples)
-    s1_s2_samples = calculate_similarity(speech_embedding,s1,s2_samples)
-    s2_s1_samples = calculate_similarity(speech_embedding,s2,s1_samples)
-    s2_s2_samples = calculate_similarity(speech_embedding,s2,s2_samples)
+    s1_s1_samples = calculate_similarity(speech_embedding,s1,max_energy_block_1)
+    s1_s2_samples = calculate_similarity(speech_embedding,s1,max_energy_block_2)
+    s2_s1_samples = calculate_similarity(speech_embedding,s2,max_energy_block_1)
+    s2_s2_samples = calculate_similarity(speech_embedding,s2,max_energy_block_2)
 
     if(s1_s1_samples >= s1_s2_samples):
         s1_samples = np.column_stack([s1_samples,s1])
@@ -74,9 +95,15 @@ def separation(*, q, speech_embedding, best_model, **soundfile_args):
     #with sf.SoundFile(**soundfile_args) as f:
     s1_samples =  np.zeros((1,1)).astype('float32')
     s2_samples =  np.zeros((1,1)).astype('float32')
+    
+
 
     first_frame = True
     with sf.SoundFile(**soundfile_args) as f:
+
+        block_max_1 = 0
+        block_max_2 = 0
+
         while True:
             data = q.get()
             if data is None:
@@ -103,37 +130,50 @@ def separation(*, q, speech_embedding, best_model, **soundfile_args):
 
             if(first_frame): # Significa que es el primer frame
 
-                print(s1_samples.shape,s1.shape)
+                #print(s1_samples.shape,s1.shape)
 
                 s1_samples = np.row_stack([s1_samples,s1])
                 s2_samples = np.row_stack([s2_samples,s2])
 
-                print("Before",s1_samples.shape,s1.shape)
+                #print("Before",s1_samples.shape,s1.shape)
                 first_frame = False
 
                 s1_samples = s1_samples.reshape(1,s1_samples.shape[0])
                 s2_samples = s2_samples.reshape(1,s2_samples.shape[0])
 
             else:
-
+          
+                E_max_1,max_energy_block_1 = get_max_energy(s1_samples[0,1:],N_SAMPLES)
+                E_max_2,max_energy_block_2 = get_max_energy(s2_samples[0,1:],N_SAMPLES)
+                
                 s1_samples, s2_samples= similarity_definition(speech_embedding,s1.reshape(1,s1.shape[0]),
                 s2.reshape(1,s2.shape[0]),
-                s1_samples,#.reshape(1,s1_samples.shape[0]),
-                s2_samples)#.reshape(1,s2_samples.shape[0]))
+                max_energy_block_1.reshape(1,max_energy_block_1.shape[0]),
+                max_energy_block_2.reshape(1,max_energy_block_2.shape[0]),
+                s1_samples,
+                s2_samples
+                )
+
+                block_max_1 = max_energy_block_1
+                block_max_2 = max_energy_block_2
 
             len_s = s1_samples.shape[1]
             #Definir orden reproducción
 
-            print("SIZE",s1_samples.shape, s2_samples.shape)
+            
             
             sd.play(np.column_stack([s1_samples[0,len_s-shape_s:],s2_samples[0,len_s-shape_s:]]),samplerate=8000)
             #s1_samples = np.concatenate((s1_samples,s1))
             #s2_samples = np.concatenate((s2_samples,s2))
 
             
-            
-    sf.write('s1.wav', s1_samples[1:], 8000)
-    sf.write('s2.wav', s2_samples[1:], 8000)
+    print("SIZE",s1_samples.shape, s2_samples.shape,block_max_1.shape,block_max_2.shape)
+
+
+    sf.write('s1.wav', s1_samples[0,1:], 8000)
+    sf.write('s2.wav', s2_samples[0,1:], 8000)
+    sf.write('block_max_2.wav',block_max_2,8000)
+    sf.write('block_max_1.wav',block_max_1,8000)
 
 
 class SettingsWindow(Dialog):
