@@ -88,64 +88,38 @@ def similarity_definition(speech_embedding,s1,s2,max_energy_block_1,max_energy_b
     return s1_samples,s2_samples
 
 def separation(*, q, speech_embedding, best_model, **soundfile_args):
-    """Write data from queue to file until *None* is received."""
-    # NB: If you want fine-grained control about the buffering of the file, you
-    #     can use Python's open() function (with the "buffering" argument) and
-    #     pass the resulting file object to sf.SoundFile().
-    #with sf.SoundFile(**soundfile_args) as f:
     s1_samples =  np.zeros((1,1)).astype('float32')
     s2_samples =  np.zeros((1,1)).astype('float32')
-    
-
-
     first_frame = True
     with sf.SoundFile(**soundfile_args) as f:
-
         block_max_1 = 0
         block_max_2 = 0
-
         while True:
             data = q.get()
             if data is None:
                 break
-
             f.write(data)
-
             # Separation
             data = data.reshape(1,data.shape[0])
             out_wavs_after = best_model.separate(data)
-            
-            
             s1 = out_wavs_after[0,0,:]
-            s2 = out_wavs_after[0,1,:]
-            
+            s2 = out_wavs_after[0,1,:]            
             shape_s = s1.shape[0]
-
             s1 = s1.reshape(shape_s,1)
             s2 = s2.reshape(shape_s,1)
-
             #Determinar si es ruido o no
-
             #Asignar segmento de audio alguno de los dos vectores s1_samples o s2_samples
-
             if(first_frame): # Significa que es el primer frame
-
                 #print(s1_samples.shape,s1.shape)
-
                 s1_samples = np.row_stack([s1_samples,s1])
                 s2_samples = np.row_stack([s2_samples,s2])
-
                 #print("Before",s1_samples.shape,s1.shape)
                 first_frame = False
-
                 s1_samples = s1_samples.reshape(1,s1_samples.shape[0])
                 s2_samples = s2_samples.reshape(1,s2_samples.shape[0])
-
             else:
-          
                 E_max_1,max_energy_block_1 = get_max_energy(s1_samples[0,1:],N_SAMPLES)
                 E_max_2,max_energy_block_2 = get_max_energy(s2_samples[0,1:],N_SAMPLES)
-                
                 s1_samples, s2_samples= similarity_definition(speech_embedding,s1.reshape(1,s1.shape[0]),
                 s2.reshape(1,s2.shape[0]),
                 max_energy_block_1.reshape(1,max_energy_block_1.shape[0]),
@@ -153,27 +127,16 @@ def separation(*, q, speech_embedding, best_model, **soundfile_args):
                 s1_samples,
                 s2_samples
                 )
-
                 block_max_1 = max_energy_block_1
                 block_max_2 = max_energy_block_2
-
             len_s = s1_samples.shape[1]
             #Definir orden reproducción
-
-            
-            
             sd.play(np.column_stack([s1_samples[0,len_s-shape_s:],s2_samples[0,len_s-shape_s:]]),samplerate=8000)
-            #s1_samples = np.concatenate((s1_samples,s1))
-            #s2_samples = np.concatenate((s2_samples,s2))
-
-            
-    print("SIZE",s1_samples.shape, s2_samples.shape,block_max_1.shape,block_max_2.shape)
-
-
-    sf.write('s1.wav', s1_samples[0,1:], 8000)
-    sf.write('s2.wav', s2_samples[0,1:], 8000)
-    sf.write('block_max_2.wav',block_max_2,8000)
-    sf.write('block_max_1.wav',block_max_1,8000)
+    k = "Tatiana_3"
+    sf.write('s1'+k+'.wav', s1_samples[0,1:], 8000)
+    sf.write('s2'+k+'.wav',s2_samples[0,1:], 8000)
+    sf.write('block_max_2'+k+'.wav',block_max_2,8000)
+    sf.write('block_max_1'+k+'.wav',block_max_1,8000)
 
 
 class SettingsWindow(Dialog):
@@ -306,12 +269,11 @@ class RecGui(tk.Tk):
         #     This is safe because here we are only accessing it once (with a
         #     single bytecode instruction).
         if self.recording:
-
-            self.previously_recording = True        
+            self.previously_recording = True
             self.data_frame = np.concatenate((self.data_frame,indata.copy()))
 
             if(self.data_frame.shape[0] >= self.N_SAMPLES):
-                #Enviar a colar de separación                 
+                #Enviar a colar de separación
                  self.audio_q.put(self.data_frame[1:,:])
                 # Reinicio frame
                  self.data_frame = np.zeros((1,1)).astype('float32')
@@ -319,7 +281,6 @@ class RecGui(tk.Tk):
             if self.previously_recording:
                 self.audio_q.put(None)
                 self.previously_recording = False
-
         self.peak = max(self.peak, np.max(np.abs(indata)))
         try:
             self.metering_q.put_nowait(self.peak)
