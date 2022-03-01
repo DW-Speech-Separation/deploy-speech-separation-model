@@ -39,7 +39,6 @@ def get_max_energy(audio, segment_size=8000):
 def energy(audio):
     return np.sum(np.abs(audio**2))
 
-
 def calculate_similarity(speech_embedding,waveform_1,waveform_2,num_layers=3):
 
         features_1, _ = speech_embedding.extract_features(torch.from_numpy(waveform_1),num_layers)
@@ -60,12 +59,21 @@ def calculate_similarity(speech_embedding,waveform_1,waveform_2,num_layers=3):
 
 def similarity_definition(speech_embedding,s1,s2,max_energy_block_1,max_energy_block_2,s1_samples,s2_samples): 
     
-    #print(s1.shape,s2.shape,s1_samples.shape,s2_samples.shape)
 
     s1_s1_samples = calculate_similarity(speech_embedding,s1,max_energy_block_1)
     s1_s2_samples = calculate_similarity(speech_embedding,s1,max_energy_block_2)
     s2_s1_samples = calculate_similarity(speech_embedding,s2,max_energy_block_1)
     s2_s2_samples = calculate_similarity(speech_embedding,s2,max_energy_block_2)
+
+    
+    print("**"*19)
+    print("Similitudes ")
+    print("s1 vs block s1",s1_s1_samples)
+    print("s1 vs block s2",s1_s2_samples)
+    print("s2 vs block s1",s2_s1_samples)
+    print("s2 vs block s2",s2_s2_samples)
+    
+
 
     if(s1_s1_samples >= s1_s2_samples):
         s1_samples = np.column_stack([s1_samples,s1])
@@ -87,7 +95,7 @@ def similarity_definition(speech_embedding,s1,s2,max_energy_block_1,max_energy_b
 
     return s1_samples,s2_samples
 
-def separation(*, q, speech_embedding, best_model, **soundfile_args):
+def separation(*, q,Reference_s1,Reference_s2,speech_embedding, best_model, **soundfile_args):
     s1_samples =  np.zeros((1,1)).astype('float32')
     s2_samples =  np.zeros((1,1)).astype('float32')
     first_frame = True
@@ -118,8 +126,36 @@ def separation(*, q, speech_embedding, best_model, **soundfile_args):
                 s1_samples = s1_samples.reshape(1,s1_samples.shape[0])
                 s2_samples = s2_samples.reshape(1,s2_samples.shape[0])
             else:
-                E_max_1,max_energy_block_1 = get_max_energy(s1_samples[0,1:],N_SAMPLES)
-                E_max_2,max_energy_block_2 = get_max_energy(s2_samples[0,1:],N_SAMPLES)
+
+                #E_max_1,max_energy_block_1 = get_max_energy(s1_samples[0,1:],N_SAMPLES)
+                #E_max_2,max_energy_block_2 = get_max_energy(s2_samples[0,1:],N_SAMPLES)
+
+
+                E_max_1,max_energy_block_1 =get_max_energy(Reference_s1,N_SAMPLES)
+ 
+                E_max_2,max_energy_block_2 =get_max_energy(Reference_s2,N_SAMPLES)
+                             
+
+                
+                #Simil_s1_block = calculate_similarity(speech_embedding,s1.reshape(1,s1.shape[0]),max_energy_block_1.reshape(1,max_energy_block_1.shape[0]))
+                #Simil_s2_block = calculate_similarity(speech_embedding,s2.reshape(1,s2.shape[0]),max_energy_block_2.reshape(1,max_energy_block_2.shape[0]))
+
+                #print("Simila_s1_block" , Simil_s1_block)
+                #print("Simila_s2_block", Simil_s2_block)
+                
+                print("max_energy_block_1",max_energy_block_1.shape)
+                print("max_energy_block_2",max_energy_block_2.shape)
+                """
+                if(E_s1 >=100):
+                    if(Simil_s1_block < 0.15): # Significa que s1 contiene info de otro speaker
+                        max_energy_block_2 = s1
+                        E_max_2 = E_s2
+                elif(E_s2 >=100):
+                     if(Simil_s2_block < 0.15): # Significa que s2 contiene info de otro speaker
+                        max_energy_block_1 = s1
+                        E_max_1 = E_s1
+                """
+
                 s1_samples, s2_samples= similarity_definition(speech_embedding,s1.reshape(1,s1.shape[0]),
                 s2.reshape(1,s2.shape[0]),
                 max_energy_block_1.reshape(1,max_energy_block_1.shape[0]),
@@ -130,15 +166,15 @@ def separation(*, q, speech_embedding, best_model, **soundfile_args):
                 block_max_1 = max_energy_block_1
                 block_max_2 = max_energy_block_2
             len_s = s1_samples.shape[1]
+
             #Definir orden reproducción
             sd.play(np.column_stack([s1_samples[0,len_s-shape_s:],s2_samples[0,len_s-shape_s:]]),samplerate=8000)
-    k = "Tatiana_3"
+
+    k = "b"
     sf.write('s1'+k+'.wav', s1_samples[0,1:], 8000)
     sf.write('s2'+k+'.wav',s2_samples[0,1:], 8000)
     sf.write('block_max_2'+k+'.wav',block_max_2,8000)
     sf.write('block_max_1'+k+'.wav',block_max_1,8000)
-
-
 class SettingsWindow(Dialog):
     """Dialog window for choosing sound device."""
     def body(self, master):
@@ -213,6 +249,12 @@ class RecGui(tk.Tk):
         self.meter['mode'] = 'determinate'
         self.meter['maximum'] = 1.0
         self.meter.pack(fill='x')
+
+
+        data, fs = sf.read("jose.wav", channels=1, subtype='float32')
+        self.Reference_s1 = data
+        data, fs = sf.read("campos_1.wav",channels=1, subtype='float32')
+        self.Reference_s2 = data
 
         # We try to open a stream with default settings first, if that doesn't
         # work, the user can manually change the device(s)
@@ -297,7 +339,10 @@ class RecGui(tk.Tk):
             prefix='delme_rec_gui_', suffix='.wav', dir='')
 
         if self.audio_q.qsize() != 0:
-            print('WARNING: Queue not empty!')
+            print('WARNING: Queue not empty!')       
+
+
+
         self.thread = threading.Thread(
             target=separation,
             kwargs=dict(
@@ -307,7 +352,9 @@ class RecGui(tk.Tk):
                 channels=self.stream.channels,
                 q=self.audio_q,
                 best_model = self.best_model,
-                speech_embedding = self.speech_embedding
+                speech_embedding = self.speech_embedding,
+                Reference_s1 = self.Reference_s1,
+                Reference_s2 = self.Reference_s2
             ),
         )
         self.thread.start()

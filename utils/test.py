@@ -6,14 +6,16 @@ import timeit
 # 1 Global variable
 
 
-file_name = "yisel_jose_1_8"
-PATH_TEST ="resources/wav/realtime/"+file_name+".wav"
+file_name = "pedro_jose_30_8"
+PATH_TEST ="/home/josearangos/Documentos/UdeA/TG-Separación-Fuentes/SIMILITUD/audios/perceptual mente similares/"+file_name+".wav"
 pre =""
+
+
 
 #PATH_TEST = "resources/wav/realtime/test.wav"
 #file_name = "test"
 
-local_save_dir = "resources/separations/16kHz/"
+local_save_dir = PATH_TEST#"resources/separations/16kHz/"
 
 # 2. Load model
 path_best_model = "checkpoint/best_model_CF_100.pth"
