@@ -62,17 +62,20 @@ def similarity_definition(speech_embedding,s1,s2,max_energy_block_1,max_energy_b
 
     s1_s1_samples = calculate_similarity(speech_embedding,s1,max_energy_block_1)
     s1_s2_samples = calculate_similarity(speech_embedding,s1,max_energy_block_2)
+    
     s2_s1_samples = calculate_similarity(speech_embedding,s2,max_energy_block_1)
     s2_s2_samples = calculate_similarity(speech_embedding,s2,max_energy_block_2)
 
-    
+
+    """
     print("**"*19)
     print("Similitudes ")
     print("s1 vs block s1",s1_s1_samples)
     print("s1 vs block s2",s1_s2_samples)
     print("s2 vs block s1",s2_s1_samples)
     print("s2 vs block s2",s2_s2_samples)
-    
+    """
+
 
 
     if(s1_s1_samples >= s1_s2_samples):
@@ -95,13 +98,11 @@ def similarity_definition(speech_embedding,s1,s2,max_energy_block_1,max_energy_b
 
     return s1_samples,s2_samples
 
-def separation(*, q,Reference_s1,Reference_s2,speech_embedding, best_model, **soundfile_args):
+def separation(*, q,speech_embedding, block_max_1,block_max_2, best_model, **soundfile_args):
     s1_samples =  np.zeros((1,1)).astype('float32')
     s2_samples =  np.zeros((1,1)).astype('float32')
     first_frame = True
     with sf.SoundFile(**soundfile_args) as f:
-        block_max_1 = 0
-        block_max_2 = 0
         while True:
             data = q.get()
             if data is None:
@@ -126,35 +127,10 @@ def separation(*, q,Reference_s1,Reference_s2,speech_embedding, best_model, **so
                 s1_samples = s1_samples.reshape(1,s1_samples.shape[0])
                 s2_samples = s2_samples.reshape(1,s2_samples.shape[0])
             else:
+                max_energy_block_1 = block_max_1
+                max_energy_block_2 = block_max_2
 
-                #E_max_1,max_energy_block_1 = get_max_energy(s1_samples[0,1:],N_SAMPLES)
-                #E_max_2,max_energy_block_2 = get_max_energy(s2_samples[0,1:],N_SAMPLES)
-
-
-                E_max_1,max_energy_block_1 =get_max_energy(Reference_s1,N_SAMPLES)
- 
-                E_max_2,max_energy_block_2 =get_max_energy(Reference_s2,N_SAMPLES)
-                             
-
-                
-                #Simil_s1_block = calculate_similarity(speech_embedding,s1.reshape(1,s1.shape[0]),max_energy_block_1.reshape(1,max_energy_block_1.shape[0]))
-                #Simil_s2_block = calculate_similarity(speech_embedding,s2.reshape(1,s2.shape[0]),max_energy_block_2.reshape(1,max_energy_block_2.shape[0]))
-
-                #print("Simila_s1_block" , Simil_s1_block)
-                #print("Simila_s2_block", Simil_s2_block)
-                
-                print("max_energy_block_1",max_energy_block_1.shape)
-                print("max_energy_block_2",max_energy_block_2.shape)
-                """
-                if(E_s1 >=100):
-                    if(Simil_s1_block < 0.15): # Significa que s1 contiene info de otro speaker
-                        max_energy_block_2 = s1
-                        E_max_2 = E_s2
-                elif(E_s2 >=100):
-                     if(Simil_s2_block < 0.15): # Significa que s2 contiene info de otro speaker
-                        max_energy_block_1 = s1
-                        E_max_1 = E_s1
-                """
+                #print("max_energy_block_1",max_energy_block_1.shape)
 
                 s1_samples, s2_samples= similarity_definition(speech_embedding,s1.reshape(1,s1.shape[0]),
                 s2.reshape(1,s2.shape[0]),
@@ -173,8 +149,8 @@ def separation(*, q,Reference_s1,Reference_s2,speech_embedding, best_model, **so
     k = "b"
     sf.write('s1'+k+'.wav', s1_samples[0,1:], 8000)
     sf.write('s2'+k+'.wav',s2_samples[0,1:], 8000)
-    sf.write('block_max_2'+k+'.wav',block_max_2,8000)
-    sf.write('block_max_1'+k+'.wav',block_max_1,8000)
+    #sf.write('block_max_2_new'+k+'.wav',block_max_2,8000)
+    #sf.write('block_max_1_new'+k+'.wav',block_max_1,8000)
 class SettingsWindow(Dialog):
     """Dialog window for choosing sound device."""
     def body(self, master):
@@ -227,9 +203,18 @@ class RecGui(tk.Tk):
 
 
         f = ttk.Frame()
+        
+        self.rec_s1_button = ttk.Button(f)
+        self.rec_s1_button.pack(side='top', padx=5, pady=5)
+        self.rec_s2_button = ttk.Button(f)
+        self.rec_s2_button.pack(side='top', padx=5, pady=5)
+
 
         self.rec_button = ttk.Button(f)
         self.rec_button.pack(side='left', padx=padding, pady=padding)
+
+        self.duration_block = 1
+
 
         self.settings_button = ttk.Button(
             f, text='Configuración', command=self.on_settings)
@@ -251,10 +236,6 @@ class RecGui(tk.Tk):
         self.meter.pack(fill='x')
 
 
-        data, fs = sf.read("jose.wav", channels=1, subtype='float32')
-        self.Reference_s1 = data
-        data, fs = sf.read("campos_1.wav",channels=1, subtype='float32')
-        self.Reference_s2 = data
 
         # We try to open a stream with default settings first, if that doesn't
         # work, the user can manually change the device(s)
@@ -331,6 +312,17 @@ class RecGui(tk.Tk):
         else:
             self.peak = 0
 
+    def on_rec_block_1(self):
+        fs = 8000
+        recording = sd.rec(int(self.duration_block * fs), samplerate=fs, channels=1,dtype='float32',blocking=True)
+        sf.write("block_max_1.wav", recording, 8000)
+
+    def on_rec_block_2(self):
+        fs = 8000
+        recording = sd.rec(int(self.duration_block * fs), samplerate=fs, channels=1,dtype='float32',blocking=True)
+        sf.write("block_max_2.wav", recording, 8000)       
+
+
     def on_rec(self):
         self.settings_button['state'] = 'disabled'
         self.recording = True
@@ -341,7 +333,10 @@ class RecGui(tk.Tk):
         if self.audio_q.qsize() != 0:
             print('WARNING: Queue not empty!')       
 
-
+        #Leer los blockes_max, speaker 1 y speaker 2
+        block_max_1, _ =  sf.read('block_max_1.wav',dtype='float32')
+        block_max_2,_ =  sf.read('block_max_2.wav',dtype='float32')
+        #
 
         self.thread = threading.Thread(
             target=separation,
@@ -353,8 +348,8 @@ class RecGui(tk.Tk):
                 q=self.audio_q,
                 best_model = self.best_model,
                 speech_embedding = self.speech_embedding,
-                Reference_s1 = self.Reference_s1,
-                Reference_s2 = self.Reference_s2
+                block_max_1 = block_max_1,
+                block_max_2 = block_max_2
             ),
         )
         self.thread.start()
@@ -387,6 +382,13 @@ class RecGui(tk.Tk):
         self.create_stream(device=w.result)
 
     def init_buttons(self):
+
+        self.rec_s2_button['text'] = 'Grabar hablante 2'
+        self.rec_s1_button['text'] = 'Grabar hablante 1'
+
+        self.rec_s1_button['command'] = self.on_rec_block_1
+        self.rec_s2_button['command'] = self.on_rec_block_2
+
         self.rec_button['text'] = 'Grabar'
         self.rec_button['command'] = self.on_rec
         if self.stream:
